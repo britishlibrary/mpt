@@ -453,3 +453,13 @@ This will validate the files stored in ``c:\storage\files`` using the checksum t
 using 8 concurrent processes and without counting the files to be processed. Results will be written out to disk
 immediately rather than being cached. The resulting reports will be written to the directory ``c:\storage\reports``
 and sent via e-mail to the two listed recipients.
+
+Licence
+=======
+
+This project is licensed under the Apache License 2.0.
+For details see the accompanying LICENSE file or visit:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Copyright (c) 2020, The British Library
