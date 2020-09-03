@@ -1,3 +1,6 @@
+import sys
+
+
 def fix_path(path: str):
     """
     Insert a 'magic prefix' to any path longer than 259 characters.
@@ -6,7 +9,7 @@ def fix_path(path: str):
     :param path: the original path
     :return: the fixed path including a prefix if necessary
     """
-    if len(path) > 259:
+    if len(path) > 259 and sys.platform == "win32":
         if path.startswith("\\\\"):
             # Alternative prefix for UNC paths
             path = u'\\\\?\\UNC\\' + path[2:]
