@@ -92,6 +92,8 @@ def main(args=None):
                               help="keep empty folders in staging directory after completion")
     stage_parser.add_argument("-d", "--destinations", required=True, dest="targets", nargs="+", metavar="DESTINATIONS",
                               help="list of destination directories into which the files should be staged")
+    stage_parser.add_argument("--keep-original", dest="remove_original", action="store_false", default=remove_original,
+                              help="keep staging files after completion")
 
     # Common args
 
