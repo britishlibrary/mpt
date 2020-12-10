@@ -311,7 +311,7 @@ class FileManager:
             os.path.join(self.cs_dir, r_path) + '.' + algorithm
         )
         if os.path.exists(out_file):
-            return in_file, CreationResult.SKIPPED
+            return in_file, CreationResult.SKIPPED, None
         else:
             if not os.path.exists(os.path.dirname(out_file)):
                 try:
@@ -319,18 +319,18 @@ class FileManager:
                 except FileExistsError:
                     pass
             try:
-                checksum = hash_file(in_file, algorithm=algorithm)
+                checksum, size = hash_file(in_file, algorithm=algorithm)
                 with open(out_file, 'w') as cs_file:
                     cs_file.write("{cs} *{sep}{path}\n".format(cs=checksum,
                                                                sep=os.sep,
                                                                path=os.path.basename(in_file)))
             except Exception as e:
                 print(str(e))
-                return in_file, CreationResult.FAILED
+                return in_file, CreationResult.FAILED, None
             if self.manifest_file is not None:
                 with open(self.manifest_file, 'a+') as manifest_file:
                     manifest_file.write("{cs} *{sep}{path}\n".format(cs=checksum, sep=os.sep, path=r_path))
-            return self._normalise_path(in_file), CreationResult.ADDED
+            return self._normalise_path(in_file), CreationResult.ADDED, size
 
     def _validate_checksum_file(self, checksum_file_path: str, algorithm: str = None):
         """ Use a checksum file within a checksum tree to validate its
@@ -362,10 +362,10 @@ class FileManager:
             data_dir = os.path.join(self.primary_path, rel_path)
             file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(rel_path, file_path[2:]))
         full_path = os.path.join(data_dir, file_path[2:])
-
+        size = None
         if os.path.exists(full_path):
             try:
-                current_cs = hash_file(full_path, algorithm=algorithm)
+                current_cs, size = hash_file(full_path, algorithm=algorithm)
                 if current_cs == original_cs:
                     file_status = ValidationResult.VALID
                 else:
@@ -375,7 +375,7 @@ class FileManager:
                 pass
         else:
             file_status = ValidationResult.MISSING
-        r_val = self._normalise_path(file_key), file_status
+        r_val = self._normalise_path(file_key), file_status, size
         return r_val
 
     def _validate_file_with_checksum(self, original_checksum_data):
@@ -385,10 +385,10 @@ class FileManager:
         """
         original_cs, rel_path = original_checksum_data
         full_path = fix_path(rel_path.replace('*', self.primary_path))
-
+        size = None
         if os.path.exists(full_path):
             try:
-                current_cs = hash_file(full_path, algorithm=self.algorithm)
+                current_cs, size = hash_file(full_path, algorithm=self.algorithm)
                 if current_cs == original_cs:
                     file_status = ValidationResult.VALID
                 else:
@@ -398,7 +398,7 @@ class FileManager:
                 pass
         else:
             file_status = ValidationResult.MISSING
-        r_val = self._normalise_path(rel_path), file_status
+        r_val = self._normalise_path(rel_path), file_status, size
         return r_val
 
     def compare_manifests(self):
@@ -492,17 +492,18 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._create_checksum_or_skip_file, files_iterable),
-                                      total=file_count, desc="MPT({}p)/Creating checksums".format(self.num_procs)):
-            results_cache.append((file_path, status))
+        for file_path, status, file_size in tqdm(pool.imap_unordered(self._create_checksum_or_skip_file,
+                                                                     files_iterable), total=file_count,
+                                                 desc="MPT({}p)/Creating checksums".format(self.num_procs)):
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
         self.report_handler.close()
         self._show_results()
 
@@ -530,17 +531,17 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
+        for file_path, status, file_size in tqdm(pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
                                       total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
-            results_cache.append((file_path, status))
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
 
         # Look for data files not listed in manifest
         for file_path, status in tqdm(pool.imap_unordered(self._check_for_file_in_manifest, files_iterable),
@@ -576,17 +577,17 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._validate_checksum_file, cs_files_iterable),
+        for file_path, status, file_size in tqdm(pool.imap_unordered(self._validate_checksum_file, cs_files_iterable),
                                       total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
-            results_cache.append((file_path, status))
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
 
         # Look for data files with no checksum file
         for file_path, status in tqdm(pool.imap_unordered(self._check_for_cs_file, data_files_iterable),

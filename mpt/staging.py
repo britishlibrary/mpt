@@ -227,7 +227,7 @@ class FileStager():
         if self.checksum is None:
             return False
         for k, v in self.destinations.items():
-            next_cs = hash_file(v["data_file"])
+            next_cs, _ = hash_file(v["data_file"])
             v["checksum_value"] = next_cs
             if next_cs != self.checksum:
                 v["status"] = StagingStatus.CHECKSUM_MISMATCH

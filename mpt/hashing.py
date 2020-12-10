@@ -20,8 +20,7 @@ def hash_files(file_list: List, algorithm: str = None, blocksize: int = None):
     return result
 
 
-def hash_file(in_path: str, algorithm: str = "sha256", blocksize: int = 131072,
-              return_size: bool = False):
+def hash_file(in_path: str, algorithm: str = "sha256", blocksize: int = 131072):
     """ Return checksum value for a given file
     :param in_path: file to hash
     :param algorithm: hash algorithm to use
@@ -36,7 +35,4 @@ def hash_file(in_path: str, algorithm: str = "sha256", blocksize: int = 131072,
         for block in iter(lambda: f.read(blocksize), b""):
             hasher.update(block)
             size += len(block)
-    if return_size:
-        return hasher.hexdigest(), size
-    else:
-        return hasher.hexdigest()
+    return hasher.hexdigest(), size
