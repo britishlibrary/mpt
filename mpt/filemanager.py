@@ -29,10 +29,10 @@ def scan_tree(path, recursive=False, formats: list = None):
             else:
                 if entry.is_file():
                     if formats is None:
-                        yield(entry.path)
+                        yield entry.path
                     else:
                         if entry.path.endswith(tuple(formats)):
-                            yield(entry.path)
+                            yield entry.path
         except PermissionError:
             pass
 
@@ -272,14 +272,14 @@ class FileManager:
         file_key = "*{sep}{path}".format(sep=os.sep, path=rel_path)
         in_path = fix_path(checksum_file_path)
         try:
-            with open(in_path, "r") as cs_file:
+            with open(in_path, "r", encoding="utf-8") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 master_cs = cs_line[0]
             for next_tree in self.other_paths:
                 try:
                     other_cs_path = fix_path(os.path.join(next_tree, rel_path))
                     if os.path.exists(other_cs_path):
-                        with open(other_cs_path, "r") as cs_file:
+                        with open(other_cs_path, "r", encoding="utf-8") as cs_file:
                             cs_line = cs_file.read().rstrip('\r\n').split(' ')
                             other_cs = cs_line[0]
                         if master_cs == other_cs:
@@ -320,7 +320,7 @@ class FileManager:
                     pass
             try:
                 checksum, size = hash_file(in_file, algorithm=algorithm)
-                with open(out_file, 'w') as cs_file:
+                with open(out_file, 'w', encoding='utf-8') as cs_file:
                     cs_file.write("{cs} *{sep}{path}\n".format(cs=checksum,
                                                                sep=os.sep,
                                                                path=os.path.basename(in_file)))
@@ -328,7 +328,7 @@ class FileManager:
                 print(str(e))
                 return in_file, CreationResult.FAILED, None
             if self.manifest_file is not None:
-                with open(self.manifest_file, 'a+') as manifest_file:
+                with open(self.manifest_file, 'a+', encoding='utf-8') as manifest_file:
                     manifest_file.write("{cs} *{sep}{path}\n".format(cs=checksum, sep=os.sep, path=r_path))
             return self._normalise_path(in_file), CreationResult.ADDED, size
 
@@ -345,7 +345,7 @@ class FileManager:
         in_path = fix_path(checksum_file_path)
 
         try:
-            with open(in_path, "r") as cs_file:
+            with open(in_path, "r", encoding="utf-8") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 original_cs = cs_line[0]
                 file_path = ' '.join(cs_line[1:])
