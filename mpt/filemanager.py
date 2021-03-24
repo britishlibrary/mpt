@@ -37,6 +37,36 @@ def scan_tree(path, recursive=False, formats: list = None):
             pass
 
 
+def walk_tree(path, recursive=False, formats: list = None):
+    """
+    Alternative generator to get all files in directory. May be useful in the
+    event of network issues
+    :param path: top-level directory to scan
+    :param recursive: true if the scan should be recursive
+    :param formats: an optional list of file extensions - if provided, the scan will be limited to files with these
+        extensions
+    :return: an iterable sequence of files found by the walk
+    """
+    if recursive:
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                if formats is None:
+                    yield full_path
+                else:
+                    if full_path.endswith(tuple(formats)):
+                        yield full_path
+    else:
+        for file in os.listdir(path):
+            full_path = os.path.join(path, file)
+            if os.path.isfile(full_path):
+                if formats is None:
+                    yield full_path
+                else:
+                    if full_path.endswith(tuple(formats)):
+                        yield full_path
+
+
 def count_lines(file_path: str):
     """
     Count the number of lines in a text file
@@ -272,14 +302,14 @@ class FileManager:
         file_key = "*{sep}{path}".format(sep=os.sep, path=rel_path)
         in_path = fix_path(checksum_file_path)
         try:
-            with open(in_path, "r", encoding="utf-8") as cs_file:
+            with open(in_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 master_cs = cs_line[0]
             for next_tree in self.other_paths:
                 try:
                     other_cs_path = fix_path(os.path.join(next_tree, rel_path))
                     if os.path.exists(other_cs_path):
-                        with open(other_cs_path, "r", encoding="utf-8") as cs_file:
+                        with open(other_cs_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                             cs_line = cs_file.read().rstrip('\r\n').split(' ')
                             other_cs = cs_line[0]
                         if master_cs == other_cs:
@@ -320,7 +350,7 @@ class FileManager:
                     pass
             try:
                 checksum, size = hash_file(in_file, algorithm=algorithm)
-                with open(out_file, 'w', encoding='utf-8') as cs_file:
+                with open(out_file, 'w', encoding='utf-8', errors="surrogateescape") as cs_file:
                     cs_file.write("{cs} *{sep}{path}\n".format(cs=checksum,
                                                                sep=os.sep,
                                                                path=os.path.basename(in_file)))
@@ -345,23 +375,16 @@ class FileManager:
         in_path = fix_path(checksum_file_path)
 
         try:
-            with open(in_path, "r", encoding="utf-8") as cs_file:
+            with open(in_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 original_cs = cs_line[0]
-                file_path = ' '.join(cs_line[1:])
         except OSError:
             r_val = self._normalise_path(in_path), ValidationResult.OSERROR
             return r_val
-
-        cs_dir = os.path.dirname(checksum_file_path)
-        rel_path = os.path.relpath(cs_dir, self.cs_dir)
-        if rel_path == ".":
-            data_dir = self.primary_path
-            file_key = file_path
-        else:
-            data_dir = os.path.join(self.primary_path, rel_path)
-            file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(rel_path, file_path[2:]))
-        full_path = os.path.join(data_dir, file_path[2:])
+        cs_rel_path = os.path.relpath(in_path, self.cs_dir)
+        data_rel_path = os.path.splitext(cs_rel_path)[0]
+        full_path = os.path.join(self.primary_path, data_rel_path)
+        file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(data_rel_path))
         size = None
         if os.path.exists(full_path):
             try:
@@ -578,7 +601,7 @@ class FileManager:
         results_cache = []
 
         for file_path, status, file_size in tqdm(pool.imap_unordered(self._validate_checksum_file, cs_files_iterable),
-                                      total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
+                                     total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
             results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
                 for next_path, next_status, next_size in results_cache:

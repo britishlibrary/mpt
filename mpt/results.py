@@ -24,7 +24,7 @@ class Report:
                 os.makedirs(os.path.dirname(path))
             except FileExistsError:
                 pass
-        self.io_handler = open(path, 'w+', newline='', encoding='utf-8')
+        self.io_handler = open(path, 'w+', newline='', encoding='utf-8', errors="surrogateescape")
         self.csv_handler = csv.DictWriter(self.io_handler, fieldnames=columns)
         self.csv_handler.writeheader()
 
