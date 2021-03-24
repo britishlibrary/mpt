@@ -372,18 +372,18 @@ class FileManager:
         if algorithm is None:
             algorithm = os.path.splitext(checksum_file_path)[1][1:]
 
-        in_path = fix_path(checksum_file_path)
+        fixed_path = fix_path(checksum_file_path)
 
         try:
-            with open(in_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
+            with open(fixed_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 original_cs = cs_line[0]
         except OSError:
-            r_val = self._normalise_path(in_path), ValidationResult.OSERROR
+            r_val = self._normalise_path(checksum_file_path), ValidationResult.OSERROR
             return r_val
-        cs_rel_path = os.path.relpath(in_path, self.cs_dir)
+        cs_rel_path = os.path.relpath(checksum_file_path, self.cs_dir)
         data_rel_path = os.path.splitext(cs_rel_path)[0]
-        full_path = os.path.join(self.primary_path, data_rel_path)
+        full_path = fix_path(os.path.join(self.primary_path, data_rel_path))
         file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(data_rel_path))
         size = None
         if os.path.exists(full_path):
