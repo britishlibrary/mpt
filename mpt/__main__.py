@@ -1,11 +1,11 @@
 import argparse
-import hashlib
 import os
 import sys
 
 from mpt import __version__
 from .defaults import *
 from .filemanager import FileManager
+from .hashing import algorithms_supported
 from .staging import stage_files
 
 
@@ -23,7 +23,7 @@ def main(args=None):
     create_parser = actionparser.add_parser("create")
     create_parser.add_argument("dir", help="Directory of files to process")
     create_parser.add_argument("-a", "--algorithm", dest="algorithm",
-                               choices=hashlib.algorithms_guaranteed,
+                               choices=algorithms_supported,
                                default=default_algorithm,
                                help="the checksum algorithm to use [default: {0}]".format(default_algorithm))
     create_parser.add_argument("--formats", dest="formats", nargs="+", help="list of file extensions to include (only)")
@@ -36,7 +36,7 @@ def main(args=None):
     # Args for validating manifests
     validate_m_parser = actionparser.add_parser("validate_manifest")
     validate_m_parser.add_argument("dir", help="Directory of files to process")
-    validate_m_parser.add_argument("-a", "--algorithm", dest="algorithm", choices=hashlib.algorithms_guaranteed,
+    validate_m_parser.add_argument("-a", "--algorithm", dest="algorithm", choices=algorithms_supported,
                                    default=default_algorithm,
                                    help="the checksum algorithm to use [default: {0}]".format(default_algorithm))
     validate_m_parser.add_argument("-m", required=True, dest="manifest", help="the manifest to validate")
@@ -74,7 +74,7 @@ def main(args=None):
     stage_parser = actionparser.add_parser("stage", description=stage_description, epilog=stage_epilog)
     stage_parser.add_argument("dir", help="Directory of files to process")
     stage_parser.add_argument("-a", "--algorithm", dest="algorithm",
-                              choices=hashlib.algorithms_guaranteed, default=default_algorithm,
+                              choices=algorithms_supported, default=default_algorithm,
                               help="the checksum algorithm to use [default: {0}]".format(default_algorithm))
     stage_parser.add_argument("-t", "--trees", dest="trees", nargs="+", default=[],
                               help="list of directories in which to create 'checksum tree' mirroring original data "

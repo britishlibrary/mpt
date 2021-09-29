@@ -8,7 +8,7 @@ from .codes import (Action, ComparisonResult, CreationResult,
                     ExceptionsResults, ValidationResult)
 from .defaults import *
 from .email import send_email
-from .hashing import hash_file
+from .hashing import hash_file, algorithms_supported
 from .paths import fix_path
 from .results import ReportHandler
 
@@ -73,7 +73,7 @@ def count_lines(file_path: str):
     :param file_path: path to the file
     :return: the number of lines
     """
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', errors='ignore') as f:
         for i, l in enumerate(f):
             pass
     return i + 1
@@ -86,7 +86,7 @@ def iterate_manifest(file_path: str):
     :return: an iterable sequence of list items, each containing the components [checksum, file path] of a
         manifest record
     """
-    with open(file_path, 'r') as in_file:
+    with open(file_path, 'r', encoding='utf8', errors='surrogateescape') as in_file:
         for line in in_file:
             line_s = line.rstrip('\r\n').split(' ', 1)
             if len(line_s) > 1:
@@ -140,6 +140,8 @@ class FileManager:
         :param cache_size: number of output records to cache in memory before writing to disk
         """
         self.primary_path = os.path.abspath(primary_path)
+        if not self.primary_path.endswith(os.sep):
+            self.primary_path = self.primary_path + os.sep
         if cs_dir is not None:
             self.cs_dir = os.path.abspath(cs_dir)
         self.recursive = recursive
@@ -224,11 +226,11 @@ class FileManager:
         :return: a tuple in the form (relative path to data file, validation result) or (None, None) if file exists
         """
         rel_path = os.path.relpath(data_file_path, self.primary_path)
-        cs_file_path = fix_path(os.path.join(self.cs_dir, rel_path) + '.' + self.algorithm)
-        if os.path.exists(cs_file_path):
-            return None, None
-        else:
-            return rel_path, ValidationResult.ADDITIONAL
+        for ext in algorithms_supported:
+            cs_file_path = fix_path(os.path.join(self.cs_dir, rel_path) + '.' + ext)
+            if os.path.exists(cs_file_path):
+                return None, None
+        return rel_path, ValidationResult.ADDITIONAL
 
     def _check_for_file_in_manifest(self, data_file_path: str):
         """
@@ -238,13 +240,19 @@ class FileManager:
             listed
         """
         with open(self.manifest_file, 'r') as manifest:
+            # Make allowance for paths containing using either forward slashes or escaped
+            # backslashes as separators
+            rel_path = os.path.relpath(data_file_path, self.primary_path)
+            paths = [
+                "*{sep}{path}".format(sep=os.sep, path=rel_path),
+                "*{sep}{path}".format(sep="/", path=rel_path.replace("\\","/"))
+            ]
             manifest_map = mmap.mmap(manifest.fileno(), 0, access=mmap.ACCESS_READ)
-            rel_path = "*{sep}{path}".format(sep=os.sep, path=os.path.relpath(data_file_path, self.primary_path))
-            found = manifest_map.find(rel_path.encode("utf-8"))
-            if found == -1:
-                return rel_path, ValidationResult.ADDITIONAL
-            else:
-                return None, None
+            for next_path in paths:
+                found = manifest_map.find(next_path.encode("utf-8"))
+                if found != -1:
+                    return None, None
+            return rel_path, ValidationResult.ADDITIONAL
 
     def _check_other_manifests(self, manifest_line: str):
         """
@@ -404,7 +412,7 @@ class FileManager:
     def _validate_file_with_checksum(self, original_checksum_data):
         """ Validate a data file against the checksum value provided
         :param original_checksum_data: a tuple in the format (file_path, file_checksum)
-        :return: a tuple containing the data file path and its status (correct/incorrect/missing)
+        :return: a triple containing the data file path, its status (correct/incorrect/missing) and its size
         """
         original_cs, rel_path = original_checksum_data
         full_path = fix_path(rel_path.replace('*', self.primary_path))
@@ -554,8 +562,9 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status, file_size in tqdm(pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
-                                      total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
+        for file_path, status, file_size in tqdm(
+                pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
+                total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
             results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
                 for next_path, next_status, next_size in results_cache:

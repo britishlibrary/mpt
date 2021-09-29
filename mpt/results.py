@@ -113,6 +113,11 @@ class ReportHandler:
         """
         Write out the summary of this MPT run's results to a text file
         """
+        if not os.path.exists(self.out_dir):
+            try:
+                os.makedirs(self.out_dir)
+            except FileExistsError:
+                pass
         out_path = os.path.join(self.out_dir, "summary.txt")
         with open(out_path, "w+") as out_file:
             out_file.write(self.summary())
@@ -181,7 +186,10 @@ class ReportHandler:
         if self.action in [Action.COMPARE_TREES, Action.COMPARE_MANIFESTS]:
             if self.results[ComparisonResult.MISSING]["count"] == 0 \
                     and self.results[ComparisonResult.UNMATCHED]["count"] == 0:
-                summary_detail = "All checksums matched."
+                if self.results[ComparisonResult.MATCHED] == 0:
+                    summary_detail = "No checksum files found to compare!"
+                else:
+                    summary_detail = "All checksums matched."
             else:
                 self.errors_detected = True
                 summary_detail = "Checksums do not match on all nodes.\n"
@@ -200,7 +208,10 @@ class ReportHandler:
                 reference = "checksum tree"
             if self.results[ValidationResult.MISSING]["count"] == 0 \
                     and self.results[ValidationResult.INVALID]["count"] == 0:
-                summary_detail = "All files in {} correct.\n".format(reference)
+                if self.results[ValidationResult.VALID]["count"] == 0:
+                    summary_detail = "No files found in {} to validate!".format(reference)
+                else:
+                    summary_detail = "All files in {} correct.\n".format(reference)
             else:
                 self.errors_detected = True
                 summary_detail = "Some files could not be validated against {}\n".format(reference)
