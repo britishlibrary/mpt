@@ -99,9 +99,13 @@ class ReportCollator:
                                     pass
                                 elif "Time taken" in next_line:
                                     time_str = next_line.split(": ")[-1]
-                                    result["time_taken"] = convert_time_string(time_str)
+                                    result["time_taken"] = time_str
                                 else:
-                                    file_status, file_results = next_line.split(": ")
+                                    try:
+                                        file_status, file_results = next_line.rsplit(": ", 1)
+                                    except Exception as e:
+                                        print(f"Error in file: {file_path}, text: '{next_line}'")
+                                        raise e
                                     status = {
                                         "file_status": file_status,
                                         "file_count": None,
@@ -109,9 +113,8 @@ class ReportCollator:
                                     }
                                     if "(" in file_results:
                                         file_count, file_size = file_results.split(" (")
-                                        file_size = file_size.replace(")","")
-                                        status["file_count"] = int(file_count.replace(",",""))
-                                        status["file_size"] = file_size
+                                        status["file_count"] = int("".join(c for c in file_count if c.isdigit()))
+                                        status["file_size"] = int("".join(c for c in file_size if c.isdigit()))
                                     else:
                                         status["file_count"] = int(file_results.replace(",",""))
                                     result["status"].append(status)
@@ -144,7 +147,7 @@ class ReportCollator:
         message = "Minimum Preservation Tool (MPT): collated reports for host {host}\n\n" \
             "Attached are the collated statistics " \
             "for the period {start} - {end}".format(host=server,
-                                                    start=self.date_start.strftime("%Y-%m-%d)"),
+                                                    start=self.date_start.strftime("%Y-%m-%d"),
                                                     end=self.date_end.strftime("%Y-%m-%d"))
         send_email(subject=subject, recipients=self.email_recipients, message=message, attachments=[self.out_file])
 

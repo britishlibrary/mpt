@@ -149,10 +149,17 @@ class FileStager():
                 options = 'xb'
             else:
                 options = 'x'
+        if not binary:
+            encoding = "utf-8"
+        else:
+            encoding = None
 
         for n in range(1, 5):
             try:
-                handler = open(path, options)
+                if encoding is None:
+                    handler = open(path, options)
+                else:
+                    handler = open(path, options, encoding=encoding)
             except FileNotFoundError:
                 continue
             finally:
@@ -227,7 +234,7 @@ class FileStager():
         if self.checksum is None:
             return False
         for k, v in self.destinations.items():
-            next_cs = hash_file(v["data_file"])
+            next_cs, _ = hash_file(v["data_file"])
             v["checksum_value"] = next_cs
             if next_cs != self.checksum:
                 v["status"] = StagingStatus.CHECKSUM_MISMATCH
@@ -365,17 +372,17 @@ def _get_files_to_stage(directory: str, target_roots: List, checksum_roots: List
                 for target_root in target_roots:
                     dest_file = os.path.join(target_root, r_path)
                     dest_dict = {
-                        "root_path": target_root,
-                        "destination": dest_file,
+                        "root_path": u"{}".format(target_root),
+                        "destination": u"{}".format(dest_file),
                         "checksum": None,
                         "manifest": None,
                     }
                     if len(checksum_roots) > 0:
                         cs_root = checksum_roots[index]
-                        cs_file = os.path.join(cs_root, "{0}.{1}".format(r_path, algorithm))
+                        cs_file = u"{}".format(os.path.join(cs_root, "{0}.{1}".format(r_path, algorithm)))
                         dest_dict["checksum"] = cs_file
                     if len(manifest_files) > 0:
-                        manifest_file = manifest_files[index]
+                        manifest_file = u"{}".format(manifest_files[index])
                         dest_dict["manifest"] = manifest_file
                     dest_dicts.append(dest_dict)
                     index += 1
@@ -634,7 +641,7 @@ def _write_csv_files_from_dictionary(args: Namespace, dictionary: Dict, output_d
             if isinstance(v, list):
                 if len(v) > 0:
                     file_name = k + ".csv"
-                    with open(os.path.join(output_dir,file_name), 'w', newline='') as csv_file:
+                    with open(os.path.join(output_dir,file_name), 'w', encoding='utf=8',newline='') as csv_file:
                         if isinstance(v[0], dict):
                             output = csv.DictWriter(csv_file, fieldnames=v[0].keys())
                             output.writeheader()

@@ -8,7 +8,7 @@ from .codes import (Action, ComparisonResult, CreationResult,
                     ExceptionsResults, ValidationResult)
 from .defaults import *
 from .email import send_email
-from .hashing import hash_file
+from .hashing import hash_file, algorithms_supported
 from .paths import fix_path
 from .results import ReportHandler
 
@@ -29,12 +29,42 @@ def scan_tree(path, recursive=False, formats: list = None):
             else:
                 if entry.is_file():
                     if formats is None:
-                        yield(entry.path)
+                        yield entry.path
                     else:
                         if entry.path.endswith(tuple(formats)):
-                            yield(entry.path)
+                            yield entry.path
         except PermissionError:
             pass
+
+
+def walk_tree(path, recursive=False, formats: list = None):
+    """
+    Alternative generator to get all files in directory. May be useful in the
+    event of network issues
+    :param path: top-level directory to scan
+    :param recursive: true if the scan should be recursive
+    :param formats: an optional list of file extensions - if provided, the scan will be limited to files with these
+        extensions
+    :return: an iterable sequence of files found by the walk
+    """
+    if recursive:
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                if formats is None:
+                    yield full_path
+                else:
+                    if full_path.endswith(tuple(formats)):
+                        yield full_path
+    else:
+        for file in os.listdir(path):
+            full_path = os.path.join(path, file)
+            if os.path.isfile(full_path):
+                if formats is None:
+                    yield full_path
+                else:
+                    if full_path.endswith(tuple(formats)):
+                        yield full_path
 
 
 def count_lines(file_path: str):
@@ -43,7 +73,7 @@ def count_lines(file_path: str):
     :param file_path: path to the file
     :return: the number of lines
     """
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', errors='ignore') as f:
         for i, l in enumerate(f):
             pass
     return i + 1
@@ -56,7 +86,7 @@ def iterate_manifest(file_path: str):
     :return: an iterable sequence of list items, each containing the components [checksum, file path] of a
         manifest record
     """
-    with open(file_path, 'r') as in_file:
+    with open(file_path, 'r', encoding='utf8', errors='surrogateescape') as in_file:
         for line in in_file:
             line_s = line.rstrip('\r\n').split(' ', 1)
             if len(line_s) > 1:
@@ -110,6 +140,8 @@ class FileManager:
         :param cache_size: number of output records to cache in memory before writing to disk
         """
         self.primary_path = os.path.abspath(primary_path)
+        if not self.primary_path.endswith(os.sep):
+            self.primary_path = self.primary_path + os.sep
         if cs_dir is not None:
             self.cs_dir = os.path.abspath(cs_dir)
         self.recursive = recursive
@@ -194,11 +226,11 @@ class FileManager:
         :return: a tuple in the form (relative path to data file, validation result) or (None, None) if file exists
         """
         rel_path = os.path.relpath(data_file_path, self.primary_path)
-        cs_file_path = fix_path(os.path.join(self.cs_dir, rel_path) + '.' + self.algorithm)
-        if os.path.exists(cs_file_path):
-            return None, None
-        else:
-            return rel_path, ValidationResult.ADDITIONAL
+        for ext in algorithms_supported:
+            cs_file_path = fix_path(os.path.join(self.cs_dir, rel_path) + '.' + ext)
+            if os.path.exists(cs_file_path):
+                return None, None
+        return rel_path, ValidationResult.ADDITIONAL
 
     def _check_for_file_in_manifest(self, data_file_path: str):
         """
@@ -208,13 +240,19 @@ class FileManager:
             listed
         """
         with open(self.manifest_file, 'r') as manifest:
+            # Make allowance for paths containing using either forward slashes or escaped
+            # backslashes as separators
+            rel_path = os.path.relpath(data_file_path, self.primary_path)
+            paths = [
+                "*{sep}{path}".format(sep=os.sep, path=rel_path),
+                "*{sep}{path}".format(sep="/", path=rel_path.replace("\\","/"))
+            ]
             manifest_map = mmap.mmap(manifest.fileno(), 0, access=mmap.ACCESS_READ)
-            rel_path = "*{sep}{path}".format(sep=os.sep, path=os.path.relpath(data_file_path, self.primary_path))
-            found = manifest_map.find(rel_path.encode("utf-8"))
-            if found == -1:
-                return rel_path, ValidationResult.ADDITIONAL
-            else:
-                return None, None
+            for next_path in paths:
+                found = manifest_map.find(next_path.encode("utf-8"))
+                if found != -1:
+                    return None, None
+            return rel_path, ValidationResult.ADDITIONAL
 
     def _check_other_manifests(self, manifest_line: str):
         """
@@ -272,14 +310,14 @@ class FileManager:
         file_key = "*{sep}{path}".format(sep=os.sep, path=rel_path)
         in_path = fix_path(checksum_file_path)
         try:
-            with open(in_path, "r") as cs_file:
+            with open(in_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 master_cs = cs_line[0]
             for next_tree in self.other_paths:
                 try:
                     other_cs_path = fix_path(os.path.join(next_tree, rel_path))
                     if os.path.exists(other_cs_path):
-                        with open(other_cs_path, "r") as cs_file:
+                        with open(other_cs_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                             cs_line = cs_file.read().rstrip('\r\n').split(' ')
                             other_cs = cs_line[0]
                         if master_cs == other_cs:
@@ -311,7 +349,7 @@ class FileManager:
             os.path.join(self.cs_dir, r_path) + '.' + algorithm
         )
         if os.path.exists(out_file):
-            return in_file, CreationResult.SKIPPED
+            return in_file, CreationResult.SKIPPED, None
         else:
             if not os.path.exists(os.path.dirname(out_file)):
                 try:
@@ -319,18 +357,18 @@ class FileManager:
                 except FileExistsError:
                     pass
             try:
-                checksum = hash_file(in_file, algorithm=algorithm)
-                with open(out_file, 'w') as cs_file:
+                checksum, size = hash_file(in_file, algorithm=algorithm)
+                with open(out_file, 'w', encoding='utf-8', errors="surrogateescape") as cs_file:
                     cs_file.write("{cs} *{sep}{path}\n".format(cs=checksum,
                                                                sep=os.sep,
                                                                path=os.path.basename(in_file)))
             except Exception as e:
                 print(str(e))
-                return in_file, CreationResult.FAILED
+                return in_file, CreationResult.FAILED, None
             if self.manifest_file is not None:
-                with open(self.manifest_file, 'a+') as manifest_file:
+                with open(self.manifest_file, 'a+', encoding='utf-8') as manifest_file:
                     manifest_file.write("{cs} *{sep}{path}\n".format(cs=checksum, sep=os.sep, path=r_path))
-            return self._normalise_path(in_file), CreationResult.ADDED
+            return self._normalise_path(in_file), CreationResult.ADDED, size
 
     def _validate_checksum_file(self, checksum_file_path: str, algorithm: str = None):
         """ Use a checksum file within a checksum tree to validate its
@@ -342,30 +380,23 @@ class FileManager:
         if algorithm is None:
             algorithm = os.path.splitext(checksum_file_path)[1][1:]
 
-        in_path = fix_path(checksum_file_path)
+        fixed_path = fix_path(checksum_file_path)
 
         try:
-            with open(in_path, "r") as cs_file:
+            with open(fixed_path, "r", encoding="utf-8", errors="surrogateescape") as cs_file:
                 cs_line = cs_file.read().rstrip('\r\n').split(' ')
                 original_cs = cs_line[0]
-                file_path = ' '.join(cs_line[1:])
         except OSError:
-            r_val = self._normalise_path(in_path), ValidationResult.OSERROR
+            r_val = self._normalise_path(checksum_file_path), ValidationResult.OSERROR
             return r_val
-
-        cs_dir = os.path.dirname(checksum_file_path)
-        rel_path = os.path.relpath(cs_dir, self.cs_dir)
-        if rel_path == ".":
-            data_dir = self.primary_path
-            file_key = file_path
-        else:
-            data_dir = os.path.join(self.primary_path, rel_path)
-            file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(rel_path, file_path[2:]))
-        full_path = os.path.join(data_dir, file_path[2:])
-
+        cs_rel_path = os.path.relpath(checksum_file_path, self.cs_dir)
+        data_rel_path = os.path.splitext(cs_rel_path)[0]
+        full_path = fix_path(os.path.join(self.primary_path, data_rel_path))
+        file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(data_rel_path))
+        size = None
         if os.path.exists(full_path):
             try:
-                current_cs = hash_file(full_path, algorithm=algorithm)
+                current_cs, size = hash_file(full_path, algorithm=algorithm)
                 if current_cs == original_cs:
                     file_status = ValidationResult.VALID
                 else:
@@ -375,20 +406,20 @@ class FileManager:
                 pass
         else:
             file_status = ValidationResult.MISSING
-        r_val = self._normalise_path(file_key), file_status
+        r_val = self._normalise_path(file_key), file_status, size
         return r_val
 
     def _validate_file_with_checksum(self, original_checksum_data):
         """ Validate a data file against the checksum value provided
         :param original_checksum_data: a tuple in the format (file_path, file_checksum)
-        :return: a tuple containing the data file path and its status (correct/incorrect/missing)
+        :return: a triple containing the data file path, its status (correct/incorrect/missing) and its size
         """
         original_cs, rel_path = original_checksum_data
         full_path = fix_path(rel_path.replace('*', self.primary_path))
-
+        size = None
         if os.path.exists(full_path):
             try:
-                current_cs = hash_file(full_path, algorithm=self.algorithm)
+                current_cs, size = hash_file(full_path, algorithm=self.algorithm)
                 if current_cs == original_cs:
                     file_status = ValidationResult.VALID
                 else:
@@ -398,7 +429,7 @@ class FileManager:
                 pass
         else:
             file_status = ValidationResult.MISSING
-        r_val = self._normalise_path(rel_path), file_status
+        r_val = self._normalise_path(rel_path), file_status, size
         return r_val
 
     def compare_manifests(self):
@@ -492,17 +523,18 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._create_checksum_or_skip_file, files_iterable),
-                                      total=file_count, desc="MPT({}p)/Creating checksums".format(self.num_procs)):
-            results_cache.append((file_path, status))
+        for file_path, status, file_size in tqdm(pool.imap_unordered(self._create_checksum_or_skip_file,
+                                                                     files_iterable), total=file_count,
+                                                 desc="MPT({}p)/Creating checksums".format(self.num_procs)):
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
         self.report_handler.close()
         self._show_results()
 
@@ -530,17 +562,18 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
-                                      total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
-            results_cache.append((file_path, status))
+        for file_path, status, file_size in tqdm(
+                pool.imap_unordered(self._validate_file_with_checksum, lines_iterable),
+                total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
 
         # Look for data files not listed in manifest
         for file_path, status in tqdm(pool.imap_unordered(self._check_for_file_in_manifest, files_iterable),
@@ -576,17 +609,17 @@ class FileManager:
 
         results_cache = []
 
-        for file_path, status in tqdm(pool.imap_unordered(self._validate_checksum_file, cs_files_iterable),
-                                      total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
-            results_cache.append((file_path, status))
+        for file_path, status, file_size in tqdm(pool.imap_unordered(self._validate_checksum_file, cs_files_iterable),
+                                     total=file_count, desc="MPT({}p)/Validating files".format(self.num_procs)):
+            results_cache.append((file_path, status, file_size))
             if len(results_cache) >= self.cache_size:
-                for next_path, next_status in results_cache:
-                    self.report_handler.add_result(description=next_status, data={"path": next_path})
+                for next_path, next_status, next_size in results_cache:
+                    self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
                 self.report_handler.write_summary()
                 results_cache = []
         # Write any records remaining in the cache after all files are processed
-        for next_path, next_status in results_cache:
-            self.report_handler.add_result(description=next_status, data={"path": next_path})
+        for next_path, next_status, next_size in results_cache:
+            self.report_handler.add_result(description=next_status, data={"path": next_path, "size": next_size})
 
         # Look for data files with no checksum file
         for file_path, status in tqdm(pool.imap_unordered(self._check_for_cs_file, data_files_iterable),

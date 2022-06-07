@@ -39,7 +39,7 @@ setup(
         ]
     },
     install_requires=[
-        'tqdm==4.32',
+        'tqdm>=4.32',
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
