@@ -4,7 +4,7 @@ from typing import List
 
 from .paths import fix_path
 
-algorithms_supported = set.union(hashlib.algorithms_guaranteed, {"xxh32", "xxh64", "xxh128"})
+algorithms_supported = set.union(hashlib.algorithms_guaranteed, xxhash.algorithms_available)
 
 def hash_files(file_list: List, algorithm: str = None, blocksize: int = None):
     """
@@ -29,12 +29,17 @@ def hash_file(in_path: str, algorithm: str = "sha256", blocksize: int = 131072):
     :param return_size: optional, return number of bytes hashed
     :return: the hash value of the file
     """
-    if algorithm == "xxh32":
-        hasher = xxhash.xxh32()
-    elif algorithm == "xxh64":
-        hasher = xxhash.xxh64()
-    elif algorithm == "xxh128":
-        hasher = xxhash.xxh128()
+    if algorithm in xxhash.algorithms_available:
+        if algorithm == "xxh32":
+            hasher = xxhash.xxh32()
+        elif algorithm == "xxh64":
+            hasher = xxhash.xxh64()
+        elif algorithm == "xxh128":
+            hasher = xxhash.xxh128()
+        elif algorithm == "xxh3_64":
+            hasher = xxhash.xxh3_64()
+        elif algorithm == "xxh3_128":
+            hasher = xxhash.xxh3_128()
     else:
         hasher = hashlib.new(algorithm)
     path = fix_path(in_path)

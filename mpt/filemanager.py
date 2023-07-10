@@ -393,7 +393,7 @@ class FileManager:
         data_rel_path = os.path.splitext(cs_rel_path)[0]
         full_path = fix_path(os.path.join(self.primary_path, data_rel_path))
         file_key = "*{sep}{path}".format(sep=os.sep, path=os.path.join(data_rel_path))
-        size = None
+        size = 0
         if os.path.exists(full_path):
             try:
                 current_cs, size = hash_file(full_path, algorithm=algorithm)
@@ -403,7 +403,6 @@ class FileManager:
                     file_status = ValidationResult.INVALID
             except OSError:
                 file_status = ValidationResult.OSERROR
-                pass
         else:
             file_status = ValidationResult.MISSING
         r_val = self._normalise_path(file_key), file_status, size
