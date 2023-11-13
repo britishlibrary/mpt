@@ -9,3 +9,4 @@ mail_size_threshold = 10000000
 max_failures = 10
 fallback_to_insecure_smtp = False
 email_only_exceptions = True
+remove_original = True

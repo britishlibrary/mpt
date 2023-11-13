@@ -27,9 +27,9 @@ class FileStager():
     def __init__(self,
                  source: str,
                  destinations: List,
+                 remove_original: bool,
                  algorithm: str = default_algorithm,
-                 blocksize: int = default_blocksize,
-                 remove_original: bool = True):
+                 blocksize: int = default_blocksize):
         """
         Initialise the class instance
         :param source: path to the source filename
@@ -343,13 +343,14 @@ def _count_files(path: str, formats: List = None, recursive: bool = True):
     return count
 
 
-def _get_files_to_stage(directory: str, target_roots: List, checksum_roots: List, manifest_files: List,
+def _get_files_to_stage(directory: str, target_roots: List, checksum_roots: List, manifest_files: List, remove_original: bool,
                         algorithm: str = None, formats: List = None, recursive: bool = True):
     """ Create a generator to iterate all files in a directory
     :param directory: the root directory to traverse
     :param target_roots: a list of root directories to which the file should be copied
     :param checksum_roots: a list of root directories in which checksums should be created
     :param manifest_files: a list of manifest files to update
+    :param remove_original: a bool which removes or retains the original staging files
     :param algorithm: the algorithm to use for hashing
     :param formats: a list of file endings to list; if omitted, list all files
     :param recursive: true if listing should include sub-directories
@@ -389,7 +390,8 @@ def _get_files_to_stage(directory: str, target_roots: List, checksum_roots: List
                 file = {
                     "source": source_file,
                     "algorithm": algorithm,
-                    "destinations": dest_dicts
+                    "destinations": dest_dicts,
+                    "remove_original": remove_original
                 }
                 yield(file)
             if not recursive:
@@ -427,7 +429,7 @@ def _stage_file(next_file: Dict):
     :return: a triple consisting of the original file name, the staging status, and the details of all destinations
     """
     fs = FileStager(source=next_file["source"], destinations=next_file["destinations"],
-                    algorithm=next_file["algorithm"])
+                    algorithm=next_file["algorithm"], remove_original=next_file["remove_original"])
     fs.start_copy()
     if fs.completed():
         result = (next_file["source"], "staged", fs.destinations)
@@ -516,7 +518,7 @@ def stage_files(args: Namespace):
     # Build a generator to list all files to be staged, along with their staging destinations, checksum
     # destination and manifest files
     files_iterable = _get_files_to_stage(directory=args.dir, target_roots=targets, checksum_roots=checksums,
-                                         manifest_files=args.manifests)
+                                         manifest_files=args.manifests, remove_original=args.remove_original)
 
     # Create a multiprocessing pool with the appropriate number of processes
     pool = multiprocessing.Pool(processes=args.processes)
